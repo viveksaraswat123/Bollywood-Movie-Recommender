@@ -1,41 +1,48 @@
+import streamlit as st
 import pandas as pd
-from sklearn.feature_extraction.text import CountVectorizer
+from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
-import warnings
-warnings.filterwarnings("ignore", category=UserWarning)
-# Load the dataset
-df = pd.read_csv('BollywoodMovieDetail.csv')
 
-# Fix column name and fill missing
-df['genre'] = df['genre'].fillna('')
+# Load dataset
+movies = pd.read_csv("BollywoodMovieDetail.csv")
 
-# Convert to lowercase for uniformity
-df['genre'] = df['genre'].str.lower()
+# Fill missing values
+for col in ['genre', 'actors', 'director', 'description']:
+    if col in movies.columns:
+        movies[col] = movies[col].fillna('')
+    else:
+        movies[col] = ""
 
-# Create count matrix from genre column, split by commas or spaces as needed
-vectorizer = CountVectorizer(tokenizer=lambda x: x.split(','))
-genre_matrix = vectorizer.fit_transform(df['genre'])
+# Combine features
+movies['combined'] = movies['title'] + " " + movies['genre'] + " " + movies['actors'] + " " + movies['director'] + " " + movies['description']
 
-cosine_sim = cosine_similarity(genre_matrix, genre_matrix)
+# TF-IDF
+tfidf = TfidfVectorizer(stop_words='english')
+tfidf_matrix = tfidf.fit_transform(movies['combined'])
 
-def recommend(movie_title):
-    idx = df[df['title'].str.lower() == movie_title.lower()].index
-    if len(idx) == 0:
-        print("Movie not found!")
-        return
-    idx = idx[0]
+# Similarity
+cosine_sim = cosine_similarity(tfidf_matrix, tfidf_matrix)
 
+# Function
+def recommend(movie_title, top_n=5):
+    if movie_title not in movies['title'].values:
+        return []
+    idx = movies[movies['title'] == movie_title].index[0]
     sim_scores = list(enumerate(cosine_sim[idx]))
     sim_scores = sorted(sim_scores, key=lambda x: x[1], reverse=True)
-    sim_scores = sim_scores[1:6]  # top 5 recommendations excluding the movie itself
+    sim_scores = sim_scores[1:top_n+1]
+    movie_indices = [i[0] for i in sim_scores]
+    return movies['title'].iloc[movie_indices].tolist()
 
-    print(f"Movies similar to '{movie_title}':")
-    for i, score in sim_scores:
-        print(df.iloc[i]['title'])
+# Streamlit UI
+st.title("🎬 Bollywood Movie Recommendation System")
+selected_movie = st.selectbox("Choose a movie:", movies['title'].values)
 
-if __name__ == "__main__":
-    while True:
-        movie = input("\nEnter Bollywood movie title (or 'exit' to quit): ")
-        if movie.lower() == 'exit':
-            break
-        recommend(movie)
+if st.button("Recommend"):
+    recommendations = recommend(selected_movie)
+    if recommendations:
+        st.write("✅ Recommended Movies:")
+        for r in recommendations:
+            st.write("- " + r)
+    else:
+        st.write("⚠️ No recommendations found.")
